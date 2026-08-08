@@ -75,9 +75,10 @@ Manage AWS account details, notification retention, and securely reset credentia
 
 ---
 
-### 🆕 v1.1.0 — Verified Real Billing Alerts (AWS Budgets & CloudWatch)
+### 🆕 v1.2.2 — Real Billing Alerts, Fully Compose UI
 Confirmed end-to-end: a real AWS Budgets or CloudWatch alarm publishing to SNS now renders
 its actual name and reason/amount in the notification, instead of falling back to generic text.
+The app is also now fully migrated to Jetpack Compose — no XML layouts remain.
 
 <p float="left">
   <img src="docs/screenshots/topics-list.png" width="250"/>
@@ -112,7 +113,7 @@ its actual name and reason/amount in the notification, instead of falling back t
 ## 🛠 Tech Stack
 
 - **Language:** Kotlin  
-- **UI:** Jetpack Compose (Onboarding), ViewBinding (Dashboard)  
+- **UI:** Jetpack Compose (100% — no XML layouts)  
 - **Architecture:** MVVM  
 - **AWS SDK:** AWS SDK for Kotlin (SNS, STS, EC2)  
 - **Push Notifications:** Firebase Cloud Messaging (FCM)  
