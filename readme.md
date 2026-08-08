@@ -75,6 +75,18 @@ Manage AWS account details, notification retention, and securely reset credentia
 
 ---
 
+### 🆕 v1.1.0 — Verified Real Billing Alerts (AWS Budgets & CloudWatch)
+Confirmed end-to-end: a real AWS Budgets or CloudWatch alarm publishing to SNS now renders
+its actual name and reason/amount in the notification, instead of falling back to generic text.
+
+<p float="left">
+  <img src="docs/screenshots/topics-list.png" width="250"/>
+  <img src="docs/screenshots/region-filtered-topics.png" width="250"/>
+  <img src="docs/screenshots/billing-alarm-notification.png" width="250"/>
+</p>
+
+---
+
 ## 🧠 How It Works
 
 1. **Onboarding**  

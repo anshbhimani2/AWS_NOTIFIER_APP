@@ -95,31 +95,28 @@ class AWSNotifierMessagingService : FirebaseMessagingService() {
     val timestamp = System.currentTimeMillis()
 
     // SNS standard payload. A raw (non-JSON-structured) SNS Publish - which is how CloudWatch
-    // alarms actually notify a topic - delivers its message to a mobile endpoint as the literal
-    // string value of "default", not wrapped in a TopicArn/Subject/Message envelope.
+    // alarms and AWS Budgets actually notify a topic - delivers its message to a mobile endpoint
+    // as the literal string value of "default", not wrapped in a TopicArn/Subject/Message envelope.
     if (data.containsKey("default")) {
         val raw = data["default"]!!
-        try {
-            val json = org.json.JSONObject(raw)
-            if (json.has("Message")) {
-                // Envelope shape (TopicArn/Subject/Message), e.g. from a relay that re-wraps
-                // the notification before publishing.
-                topicArn = json.optString("TopicArn").takeIf { it.isNotEmpty() }
-                subject = json.optString("Subject").takeIf { it.isNotEmpty() }
-                val (alarmName, alarmBody) = parseCloudWatchAlarm(json.optString("Message"))
-                subject = subject ?: alarmName
-                messageText = alarmBody
-            } else if (json.has("AlarmName") || json.has("NewStateReason")) {
-                // CloudWatch alarm JSON delivered directly - the real-world case.
-                val (alarmName, alarmBody) = parseCloudWatchAlarm(raw)
-                subject = alarmName
-                messageText = alarmBody
-            } else {
-                messageText = raw.takeIf { it.isNotEmpty() }
-            }
+        val envelope = try {
+            org.json.JSONObject(raw).takeIf { it.has("Message") }
         } catch (e: Exception) {
-            // Not JSON at all - plain text message.
-            messageText = raw.takeIf { it.isNotEmpty() }
+            null
+        }
+        if (envelope != null) {
+            // Envelope shape (TopicArn/Subject/Message), e.g. from a relay that re-wraps the
+            // notification before publishing.
+            topicArn = envelope.optString("TopicArn").takeIf { it.isNotEmpty() }
+            subject = envelope.optString("Subject").takeIf { it.isNotEmpty() }
+            val (parsedTitle, parsedBody) = parseStructuredAlert(envelope.optString("Message"))
+            subject = subject ?: parsedTitle
+            messageText = parsedBody
+        } else {
+            // Delivered directly - the real-world case for CloudWatch alarms and AWS Budgets.
+            val (parsedTitle, parsedBody) = parseStructuredAlert(raw)
+            subject = parsedTitle
+            messageText = parsedBody
         }
     }
 
@@ -140,13 +137,42 @@ class AWSNotifierMessagingService : FirebaseMessagingService() {
     showNotification(title, body, topicArn, timestamp)
 }
 
-    private fun parseCloudWatchAlarm(raw: String): Pair<String?, String?> {
+    /**
+     * Extracts a (title, body) pair from a structured alert JSON. Recognizes CloudWatch alarm
+     * fields and common AWS Budgets field names; falls back to a readable key/value summary for
+     * any other JSON shape, and to the raw text itself if it isn't JSON at all.
+     */
+    private fun parseStructuredAlert(raw: String): Pair<String?, String?> {
         return try {
-            val alarmJson = org.json.JSONObject(raw)
-            val alarmName = alarmJson.optString("AlarmName", "").takeIf { it.isNotEmpty() }
-            val reason = alarmJson.optString("NewStateReason", "").takeIf { it.isNotEmpty() }
-            alarmName to (reason ?: raw.takeIf { it.isNotEmpty() })
+            val json = org.json.JSONObject(raw)
+
+            val alarmName = json.optString("AlarmName", "").takeIf { it.isNotEmpty() }
+            val alarmReason = json.optString("NewStateReason", "").takeIf { it.isNotEmpty() }
+            if (alarmName != null || alarmReason != null) {
+                return alarmName to (alarmReason ?: raw)
+            }
+
+            val budgetName = json.optString("budgetName", json.optString("BudgetName", ""))
+                .takeIf { it.isNotEmpty() }
+            if (budgetName != null) {
+                val actual = json.optString("actualAmount", json.optString("ActualAmount", ""))
+                val limit = json.optString("budgetLimit", json.optString("BudgetLimit", ""))
+                val unit = json.optString("unit", json.optString("Unit", ""))
+                val body = if (actual.isNotEmpty() && limit.isNotEmpty()) {
+                    "Spend of $actual $unit has crossed your budget limit of $limit $unit".trim()
+                } else {
+                    raw
+                }
+                return budgetName to body
+            }
+
+            // Unrecognized JSON shape - summarize the first few fields rather than show nothing.
+            val summary = json.keys().asSequence()
+                .take(4)
+                .joinToString("\n") { key -> "$key: ${json.optString(key)}" }
+            null to summary.takeIf { it.isNotEmpty() }
         } catch (e: Exception) {
+            // Not JSON - plain text message.
             null to raw.takeIf { it.isNotEmpty() }
         }
     }
@@ -175,7 +201,7 @@ class AWSNotifierMessagingService : FirebaseMessagingService() {
                 val entity = com.ansh.awsnotifier.data.NotificationEntity(
                     title = title,
                     message = body,
-                    topic = topicArn ?: "Unknown",
+                    topic = topicArn ?: title,
                     timestamp = timestamp
                 )
                 app.notificationRepository.insert(entity)
