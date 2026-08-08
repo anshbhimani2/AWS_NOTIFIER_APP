@@ -61,8 +61,8 @@ android {
         applicationId = "com.ansh.awsnotifier"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.2"
 
         manifestPlaceholders["firebase_messaging_auto_init_enabled"] = "true"
 
