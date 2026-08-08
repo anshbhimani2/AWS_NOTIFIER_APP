@@ -43,14 +43,26 @@ android {
                 }
             }
         }
+        getByName("debug") {
+            val storeFilePath = gradleProps.getProperty("MY_DEBUG_STORE_FILE")
+            if (storeFilePath != null) {
+                val storeFile = File(storeFilePath)
+                if (storeFile.exists()) {
+                    this.storeFile = storeFile
+                    this.storePassword = gradleProps.getProperty("MY_DEBUG_STORE_PASSWORD")
+                    this.keyAlias = gradleProps.getProperty("MY_DEBUG_KEY_ALIAS")
+                    this.keyPassword = gradleProps.getProperty("MY_DEBUG_KEY_PASSWORD")
+                }
+            }
+        }
     }
 
     defaultConfig {
         applicationId = "com.ansh.awsnotifier"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         manifestPlaceholders["firebase_messaging_auto_init_enabled"] = "true"
 
@@ -88,6 +100,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

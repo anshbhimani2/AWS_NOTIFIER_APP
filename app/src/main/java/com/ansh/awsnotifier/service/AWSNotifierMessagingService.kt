@@ -94,34 +94,32 @@ class AWSNotifierMessagingService : FirebaseMessagingService() {
     var subject: String? = null
     val timestamp = System.currentTimeMillis()
 
-    // SNS standard payload
+    // SNS standard payload. A raw (non-JSON-structured) SNS Publish - which is how CloudWatch
+    // alarms actually notify a topic - delivers its message to a mobile endpoint as the literal
+    // string value of "default", not wrapped in a TopicArn/Subject/Message envelope.
     if (data.containsKey("default")) {
+        val raw = data["default"]!!
         try {
-            // Step 1: Parse outer SNS envelope
-            val snsEnvelope = org.json.JSONObject(data["default"]!!)
-            topicArn = snsEnvelope.optString("TopicArn").takeIf { it.isNotEmpty() }
-            subject = snsEnvelope.optString("Subject").takeIf { it.isNotEmpty() }
-
-            // Step 2: Parse inner Message field (double encoded CloudWatch JSON)
-            val rawMessage = snsEnvelope.optString("Message")
-            messageText = try {
-                val alarmJson = org.json.JSONObject(rawMessage)
-
-                val alarmName = alarmJson.optString("AlarmName", "")
-                val reason = alarmJson.optString("NewStateReason", "")
-
-                buildString {
-                    if (alarmName.isNotEmpty()) append("$alarmName\n")
-                    if (reason.isNotEmpty()) append(reason)
-                }.trim()
-
-            } catch (e: Exception) {
-                // Not a JSON message, use as plain text
-                rawMessage.takeIf { it.isNotEmpty() }
+            val json = org.json.JSONObject(raw)
+            if (json.has("Message")) {
+                // Envelope shape (TopicArn/Subject/Message), e.g. from a relay that re-wraps
+                // the notification before publishing.
+                topicArn = json.optString("TopicArn").takeIf { it.isNotEmpty() }
+                subject = json.optString("Subject").takeIf { it.isNotEmpty() }
+                val (alarmName, alarmBody) = parseCloudWatchAlarm(json.optString("Message"))
+                subject = subject ?: alarmName
+                messageText = alarmBody
+            } else if (json.has("AlarmName") || json.has("NewStateReason")) {
+                // CloudWatch alarm JSON delivered directly - the real-world case.
+                val (alarmName, alarmBody) = parseCloudWatchAlarm(raw)
+                subject = alarmName
+                messageText = alarmBody
+            } else {
+                messageText = raw.takeIf { it.isNotEmpty() }
             }
-
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse SNS JSON", e)
+            // Not JSON at all - plain text message.
+            messageText = raw.takeIf { it.isNotEmpty() }
         }
     }
 
@@ -141,6 +139,17 @@ class AWSNotifierMessagingService : FirebaseMessagingService() {
 
     showNotification(title, body, topicArn, timestamp)
 }
+
+    private fun parseCloudWatchAlarm(raw: String): Pair<String?, String?> {
+        return try {
+            val alarmJson = org.json.JSONObject(raw)
+            val alarmName = alarmJson.optString("AlarmName", "").takeIf { it.isNotEmpty() }
+            val reason = alarmJson.optString("NewStateReason", "").takeIf { it.isNotEmpty() }
+            alarmName to (reason ?: raw.takeIf { it.isNotEmpty() })
+        } catch (e: Exception) {
+            null to raw.takeIf { it.isNotEmpty() }
+        }
+    }
 
     private fun getIconForTopic(topic: String?): Int {
         if (topic == null) return R.drawable.ic_notification
